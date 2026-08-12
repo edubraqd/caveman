@@ -200,7 +200,7 @@ MODELO = """<!DOCTYPE html>
   <h1>{titulo}</h1>
   <div class="subtitulo">{subtitulo}</div>
   <div class="meta">
-    <strong>Implementação de referência:</strong> sitecrawl/ · 50 testes automatizados<br>
+    <strong>Implementação de referência:</strong> sitecrawl/ · 55 testes automatizados<br>
     <strong>Repositório:</strong> studies/web-scraping-python<br>
     <strong>Gerado em:</strong> {data}
   </div>

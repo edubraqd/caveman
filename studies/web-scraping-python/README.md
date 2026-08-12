@@ -1,6 +1,6 @@
 # Estudo profundo: extrair o conteúdo inteiro de um site com Python
 
-Guia completo + implementação de referência funcionando (`sitecrawl/`), com 50 testes
+Guia completo + implementação de referência funcionando (`sitecrawl/`), com 55 testes
 automatizados e números medidos, não estimados.
 
 O objetivo aqui não é "aprender BeautifulSoup". É responder à pergunta difícil:
@@ -300,7 +300,7 @@ Reproduza no seu alvo: `python benchmark_parsers.py https://seu-site.com/pagina`
 
 Scrapy é excelente e resolve muito do que este estudo implementa à mão. A implementação
 de referência aqui é didática de propósito: cada mecanismo aparece explícito e comentado,
-em cerca de 2.000 linhas (mais 580 de teste), em vez de escondido atrás de uma
+em cerca de 2.000 linhas (mais 700 de teste), em vez de escondido atrás de uma
 configuração de framework.
 
 ---
@@ -364,6 +364,23 @@ Convenção do RFC 9309 que quase todo tutorial ignora:
 
 Tratar 503 como "pode tudo" é o caminho mais curto para um IP banido: o servidor está
 sobrecarregado e você escolheu justamente esse momento para atacar.
+
+**E não use o `urllib.robotparser` da biblioteca padrão.** Ele não implementa curingas
+(`*` e `$`) nos caminhos: trata o `*` como caractere literal e libera tudo que só foi
+proibido por curinga. Medido contra o robots.txt real do PyPI, que usa
+`Disallow: /pypi/*/json` e `Disallow: /search*`:
+
+| Caminho | `urllib.robotparser` | `protego` | O site quis |
+|---|---|---|---|
+| `/simple/requests/` | BARRADA | BARRADA | barrar |
+| `/pypi/requests/json` | **PODE** | BARRADA | barrar |
+| `/search?q=http` | **PODE** | BARRADA | barrar |
+| `/pypi?x=1` | **PODE** | BARRADA | barrar |
+
+Repare que o erro é para o lado errado: ele **libera** o que foi proibido, silenciosamente.
+Você acessa o que não devia e nem fica sabendo. `protego` implementa as regras do Google
+e é uma linha no requirements — `sitecrawl` o usa quando está instalado e emite aviso
+quando não está.
 
 ### 6.5 Retry, backoff e o `Retry-After`
 
@@ -669,6 +686,21 @@ python -m sitecrawl https://exemplo.com --saida ./saida
 python -m sitecrawl --help
 ```
 
+### Roteiro de estudo executável
+
+Para *aprender* o mecanismo, rode cada estágio isolado antes de ver o crawler inteiro:
+
+```bash
+python passo_a_passo.py                      # alvo padrão: pypi.org
+python passo_a_passo.py https://seu-site.com
+```
+
+São 10 passos narrados, ~20 requisições ao alvo: robots.txt decidindo URL por URL,
+sitemap rendendo milhares de URLs numa requisição, canonicalização colapsando variantes,
+uma busca com anatomia da resposta, extração com metadados e JSON-LD, detecção de página
+de desafio, gradiente de SimHash, intervalo entre requisições cronometrado, o crawl
+completo e a inspeção do resultado por SQL.
+
 Como biblioteca:
 
 ```python
@@ -713,7 +745,7 @@ pip install pytest && python -m pytest tests/ -q
 ```
 
 ```
-50 passed in 8.71s
+55 passed in 9.20s
 ```
 
 Os testes de ponta a ponta sobem um site-fixture em `localhost`
@@ -740,8 +772,8 @@ Vale registrar, porque são exatamente as classes de defeito que o estudo descre
 
 - Não faz login/sessão autenticada.
 - Não extrai texto de PDF (baixa com `--com-documentos`, mas não parseia).
-- O parser de robots.txt é o da stdlib, que não implementa curingas em `Allow` como
-  Google e Bing fazem. Para sites com regras complexas, troque por `protego`.
+- Sem `protego` instalado, o crawler cai no parser da stdlib, que ignora curingas no
+  robots.txt (§6.4). Ele avisa no log, mas o certo é manter o `protego`.
 - Deduplicação e frontier são de processo único; acima de ~100 mil páginas, veja §10.
 - **A demonstração contra site externo neste ambiente foi limitada** pela política de
   rede do container (só registros de pacote liberados). Os números reais aqui vêm de

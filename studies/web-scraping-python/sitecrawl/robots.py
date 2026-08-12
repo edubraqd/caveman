@@ -6,9 +6,18 @@ Regra prática que quase todo tutorial erra:
     (o RFC 9309 §2.3.1.4 diz "unavailable" = disallow all). Tratar 503 como
     "pode tudo" é exatamente o comportamento que faz um site bloquear seu IP.
 
-O parser é o `urllib.robotparser` da biblioteca padrão. Ele não implementa a
-extensão `Allow` com curinga da forma que Google e Bing implementam, então em
-sites complexos vale trocar por `protego` (mesma interface, regras do Google).
+**Sobre o parser.** O `urllib.robotparser` da biblioteca padrão *não implementa
+curingas* (`*` e `$`) nos caminhos. Isso não é um detalhe acadêmico: ele erra
+para o lado errado — libera o que o site proibiu. Medido contra o robots.txt do
+PyPI, que usa `Disallow: /pypi/*/json` e `Disallow: /search*`:
+
+    /pypi/requests/json     stdlib=PODE    protego=BARRADA
+    /search?q=http          stdlib=PODE    protego=BARRADA
+    /pypi?x=1               stdlib=PODE    protego=BARRADA
+
+Por isso preferimos `protego` (implementa as regras do Google, mesma ideia de
+interface) quando ele está instalado, e caímos para a stdlib com um aviso
+quando não está.
 """
 
 from __future__ import annotations
@@ -22,12 +31,47 @@ from .fetch import Fetcher
 
 log = logging.getLogger("sitecrawl.robots")
 
+try:
+    from protego import Protego
+except ImportError:  # pragma: no cover - depende do ambiente
+    Protego = None
+
+
+class _Parser:
+    """Fachada sobre protego (preferido) ou urllib.robotparser (reserva)."""
+
+    __slots__ = ("_impl", "engine")
+
+    def __init__(self, texto: str) -> None:
+        if Protego is not None:
+            self._impl = Protego.parse(texto)
+            self.engine = "protego"
+        else:
+            parser = RobotFileParser()
+            parser.parse(texto.splitlines())
+            self._impl = parser
+            self.engine = "stdlib"
+
+    def can_fetch(self, agent: str, url: str) -> bool:
+        if self.engine == "protego":
+            return bool(self._impl.can_fetch(url, agent))
+        return bool(self._impl.can_fetch(agent, url))
+
+    def crawl_delay(self, agent: str) -> float | None:
+        delay = self._impl.crawl_delay(agent)
+        return float(delay) if delay is not None else None
+
+    def sitemaps(self) -> list[str]:
+        if self.engine == "protego":
+            return list(self._impl.sitemaps or [])
+        return list(self._impl.site_maps() or [])
+
 
 class _Rules:
     __slots__ = ("parser", "allow_all", "disallow_all", "sitemaps")
 
     def __init__(self) -> None:
-        self.parser: RobotFileParser | None = None
+        self.parser: _Parser | None = None
         self.allow_all = False
         self.disallow_all = False
         self.sitemaps: list[str] = []
@@ -64,10 +108,15 @@ class RobotsCache:
             elif response.status >= 400:
                 rules.allow_all = True
             else:
-                parser = RobotFileParser()
-                parser.parse(response.text.splitlines())
+                parser = _Parser(response.text)
                 rules.parser = parser
-                rules.sitemaps = list(parser.site_maps() or [])
+                rules.sitemaps = parser.sitemaps()
+                if parser.engine == "stdlib":
+                    log.warning(
+                        "protego ausente: curingas em robots.txt (Disallow: /x/*/y) "
+                        "serão IGNORADOS e o crawler pode acessar o que o site proibiu. "
+                        "Instale com: pip install protego"
+                    )
 
             self._hosts[key] = rules
             return rules
@@ -85,10 +134,9 @@ class RobotsCache:
         if rules.parser is None:
             return None
         try:
-            delay = rules.parser.crawl_delay(self._agent)
-        except AttributeError:  # parser sem entradas
+            return rules.parser.crawl_delay(self._agent)
+        except (AttributeError, ValueError):  # parser sem entradas ou valor inválido
             return None
-        return float(delay) if delay is not None else None
 
     async def sitemaps(self, url: str) -> list[str]:
         return list((await self._rules_for(url)).sitemaps)
