@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# saída de crawls
+saida/
+saida-*/
+*.sqlite3
+*.jsonl

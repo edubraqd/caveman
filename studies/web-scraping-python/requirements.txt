@@ -1,0 +1,14 @@
+# Núcleo — obrigatório
+httpx[http2]>=0.27          # cliente HTTP assíncrono, HTTP/2, streaming
+selectolax>=0.3.21          # parser DOM em C (Lexbor) — links e metadados
+trafilatura>=2.0            # extração de conteúdo principal + metadados
+
+# Opcional — só se o site depender de JavaScript
+# playwright>=1.45          # depois: playwright install chromium
+
+# Opcional — parser de robots.txt com as regras do Google (curingas em Allow)
+# protego>=0.3
+
+# Desenvolvimento
+pytest>=8.0
+pytest-asyncio>=0.23
